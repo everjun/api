@@ -3,10 +3,10 @@ import time
 
 from datetime import datetime
 from models import User, TextTable
+from settings import SECRET_KEY
 
 
 
-SECRET_KEY = 'MYSECRET'
 
 
 async def login(con, username, password):

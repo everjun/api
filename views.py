@@ -7,7 +7,8 @@ from models import User
 from aiohttp import web
 from aiopg.sa import create_engine
 from aiohttp_swagger import setup_swagger
-
+from settings import DATABASE_SETTINGS
+from decorators import json_fields_required, json_login_required
 
 
 engine = None
@@ -17,11 +18,11 @@ async def init_engine():
     global engine
     global connection
     if not engine:
-        engine = await create_engine(user='everjun',
-                                     password='password',
-                                     database='test_db',
-                                     host='127.0.0.1',
-                                     port='5432')
+        engine = await create_engine(user=DATABASE_SETTINGS['username'],
+                                     password=DATABASE_SETTINGS['password'],
+                                     database=DATABASE_SETTINGS['database'],
+                                     host=DATABASE_SETTINGS['host'],
+                                     port=DATABASE_SETTINGS['port'])
         connection = await engine.acquire()
 
 
@@ -29,6 +30,7 @@ async def init_engine():
 routes = web.RouteTableDef()
 # @app.route('/api/login', methods=['GET'])
 @routes.post('/api/login')
+@json_fields_required('username', 'password')
 async def login(request):
     """
     ---
@@ -56,11 +58,10 @@ async def login(request):
     """
     try:
         r = await request.json()
-        if 'username' in r and 'password' in r:
-            user = await log(connection, r['username'], r['password'])
-            if user:
-                return web.json_response({'error': False, 'auth_token': get_secret_key(user).decode('utf8')})
-            return web.json_response({'error': True, 'error_text': 'Wrong username or password'})
+        user = await log(connection, r['username'], r['password'])
+        if user:
+            return web.json_response({'error': False, 'auth_token': get_secret_key(user).decode('utf8')})
+        return web.json_response({'error': True, 'error_text': 'Wrong username or password'})
     except:
         pass
     return web.json_response({'error': True, 'error_text': 'Wrong request'})
@@ -68,6 +69,8 @@ async def login(request):
 
 # @app.route('/api/add', methods=['POST'])
 @routes.post('/api/add')
+@json_fields_required('auth_token', 'text')
+@json_login_required
 async def add(request):
     """
     ---
@@ -99,17 +102,11 @@ async def add(request):
     """
     try:
         r = await request.json()
-        if 'auth_token' in r:
-            check = check_secret_key(r['auth_token'])
-            if check:
-                if 'text' in r:
-                    parent_id = r.get('parent_id', None)
-                    text = r['text']
-                    el = await add_element(connection, text, parent_id)
-                    return web.json_response({'error': False, 'response':{'element':{'id': el.id, 'text': el.text, 'parent_id': str(el.parent_id)}}})
-                else:
-                    return web.json_response({'error': True, 'error_text': 'There is no text in request'})
-        return web.json_response({'error': True, 'error_text': 'Your auth token is invalid'})
+        parent_id = r.get('parent_id', None)
+        text = r['text']
+        el = await add_element(connection, text, parent_id)
+        return web.json_response({'error': False, 'response':{'element':{'id': el.id, 'text': el.text, 'parent_id': str(el.parent_id)}}})
+        
     except:
         pass
     return web.json_response({'error': True, 'error_text': 'Wrong request'})
@@ -117,6 +114,8 @@ async def add(request):
 
 # @app.route('/api/get_by_text', methods=["GET"])
 @routes.post('/api/get_by_text')
+@json_fields_required('auth_token', 'text')
+@json_login_required
 async def get(request):
     """
     ---
@@ -144,16 +143,9 @@ async def get(request):
     """
     try:
         r = await request.json()
-        if 'auth_token' in r:
-            check = check_secret_key(r['auth_token'])
-            if check:
-                if 'text' in r:
-                    text = r['text']
-                    lst = await get_element(connection, text)
-                    return web.json_response({'error': False, 'response':{'elements': lst}})
-                else:
-                    return web.json_response({'error': True, 'error_text': 'There is no text in request'})
-        return web.json_response({'error': True, 'error_text': 'Your auth token is invalid'})
+        text = r['text']
+        lst = await get_element(connection, text)
+        return web.json_response({'error': False, 'response':{'elements': lst}})
     except:
         pass
     return web.json_response({'error': True, 'error_text': 'Wrong request'})
@@ -161,6 +153,8 @@ async def get(request):
 
 # @app.route('/api/get_by_id', methods=["GET"])
 @routes.post('/api/get_by_id')
+@json_fields_required('auth_token', 'id')
+@json_login_required
 async def get_by_id(request):
     """
     ---
@@ -188,16 +182,9 @@ async def get_by_id(request):
     """
     try:
         r = await request.json()
-        if 'auth_token' in r:
-            check = check_secret_key(r['auth_token'])
-            if check:
-                if 'id' in r:
-                    id = r['id']
-                    res = await get_tree(connection, id)
-                    return web.json_response({'error': False, 'response':res})
-                else:
-                    return web.json_response({'error': True, 'error_text': 'There is no id in request'})
-        return web.json_response({'error': True, 'error_text': 'Your auth token is invalid'})
+        id = r['id']
+        res = await get_tree(connection, id)
+        return web.json_response({'error': False, 'response':res})
     except:
         pass
     return web.json_response({'error': True, 'error_text': 'Wrong request'})
