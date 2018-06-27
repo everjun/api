@@ -1,8 +1,8 @@
 import aiopg
 
 
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.sql.expression import exists
+from sqlalchemy import Column, Integer, String, ForeignKey, func
+from sqlalchemy.sql.expression import exists, literal, and_
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.orm import relationship
@@ -17,13 +17,12 @@ class TextTable(Base):
     __tablename__ = 'texttable'
     id = Column(Integer, primary_key=True)
     text = Column(String)
-    parent_id = Column(Integer, ForeignKey("texttable.id"), index=True)
-    parent = relationship(lambda: TextTable, remote_side=id, backref='children')
+    path = Column(String)
 
-    def __init__(self, text, parent_id=None):
+    def __init__(self, text, parent_id=None, path=None):
         self.text = text
-        if parent_id:
-            self.parent_id = parent_id
+        self.parent_id = parent_id
+        self.path = path
 
 
     def __str__(self):
@@ -32,7 +31,7 @@ class TextTable(Base):
 
     async def add_to_db(self, connection):
         res = await connection.execute(TextTable.__table__.insert().values(text=self.text, 
-                                                                           parent_id=self.parent_id))
+                                                                           path=await self.get_path(connection)))
         row = await res.fetchone()
         self.id = row["id"]
 
@@ -41,6 +40,33 @@ class TextTable(Base):
             return await TextTable.get_by_id(connection, self.parent_id)
         return None
 
+    async def get_path(self, connection):
+        path = await connection.execute(TextTable.__table__.select()\
+                                                             .where(TextTable.id == self.parent_id)\
+                                                             .column(TextTable.path))
+        if path.rowcount == 1:
+            path = (await path.fetchone())["path"]
+            children_count = await connection.execute(TextTable.__table__.select()\
+                                                                          .where(TextTable.path.startswith("%s." % path))\
+                                                                          .where(TextTable.path.notlike("%s.%%.%%" % path)))
+            self.path = "%s.%i" % (path, children_count.rowcount + 1)
+            return self.path
+        elif self.parent_id is not None:
+            raise Exception('Wrong parent id')
+        self.path = None
+        return None
+
+    async def get_parents_ids(self, connection):
+        if not self.path:
+            self.get_path(connection)
+        rows = await connection.execute(TextTable.__table__.select()\
+                                                           .where(and_(literal(self.path).startswith(TextTable.path),
+                                                                       TextTable.id != self.id)))
+        lst = []
+        async for row in rows:
+            lst.append(row["id"])
+        return lst
+
 
     @classmethod
     async def get_by_text(cls, connection, text):
@@ -48,7 +74,7 @@ class TextTable(Base):
         if res.rowcount > 0:
             lst = []
             async for row in res:
-                t = TextTable(text, row["parent_id"])
+                t = TextTable(text, path=row["path"])
                 t.id = row["id"]
                 lst.append(t)
             return lst
@@ -61,10 +87,11 @@ class TextTable(Base):
         if res.rowcount == 1:
             lst = []
             row = await res.fetchone()
-            t = TextTable(row["text"], row["parent_id"])
+            t = TextTable(row["text"], path=row["path"])
             t.id = id
             return t
         return None
+
 
 
 class User(Base):

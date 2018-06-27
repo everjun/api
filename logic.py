@@ -27,12 +27,12 @@ async def get_element(connection, text):
         els = []
         for r in res:
             lst = []
-            if r.parent_id:
-                parent = r
-                while parent.parent_id:
-                    parent = await parent.get_parent(connection)
-                    lst.append(parent.id)
-            els.append({'id':r.id, 'text':text, 'parents':lst})
+            parents = await r.get_parents_ids(connection)
+
+                # while parent.parent_id:
+                #     parent = await parent.get_parent(connection)
+                #     lst.append(parent.id)
+            els.append({'id':r.id, 'text':text, 'parents':parents})
         return els
     return []
 
@@ -40,13 +40,8 @@ async def get_element(connection, text):
 async def get_tree(connection, id):
     r = await TextTable.get_by_id(connection, id)
     if r:
-        lst = []
-        if r.parent_id:
-            parent = r
-            while parent.parent_id:
-                parent = await parent.get_parent(connection)
-                lst.append(parent.id)
-        return {'id': id, 'text': r.text, 'parents': lst}
+        parents = await r.get_parents_ids(connection)
+        return {'id': id, 'text': r.text, 'parents': parents}
     return []
 
 

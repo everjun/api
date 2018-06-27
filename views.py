@@ -26,9 +26,9 @@ async def init_engine():
         connection = await engine.acquire()
 
 
-# app = Flask(__name__)
+
 routes = web.RouteTableDef()
-# @app.route('/api/login', methods=['GET'])
+
 @routes.post('/api/login')
 @json_fields_required('username', 'password')
 async def login(request):
@@ -106,13 +106,11 @@ async def add(request):
         text = r['text']
         el = await add_element(connection, text, parent_id)
         return web.json_response({'error': False, 'response':{'element':{'id': el.id, 'text': el.text, 'parent_id': str(el.parent_id)}}})
-        
     except:
         pass
     return web.json_response({'error': True, 'error_text': 'Wrong request'})
 
 
-# @app.route('/api/get_by_text', methods=["GET"])
 @routes.post('/api/get_by_text')
 @json_fields_required('auth_token', 'text')
 @json_login_required
@@ -151,7 +149,7 @@ async def get(request):
     return web.json_response({'error': True, 'error_text': 'Wrong request'})
 
 
-# @app.route('/api/get_by_id', methods=["GET"])
+
 @routes.post('/api/get_by_id')
 @json_fields_required('auth_token', 'id')
 @json_login_required
