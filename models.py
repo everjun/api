@@ -4,7 +4,7 @@ import aiopg
 from sqlalchemy import Column, Integer, String, ForeignKey, func
 from sqlalchemy.sql.expression import exists, literal, and_
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine as ce
 from sqlalchemy.orm import relationship
 from hashlib import md5
 from aiopg.sa import create_engine
@@ -41,20 +41,29 @@ class TextTable(Base):
         return None
 
     async def get_path(self, connection):
-        path = await connection.execute(TextTable.__table__.select()\
-                                                             .where(TextTable.id == self.parent_id)\
-                                                             .column(TextTable.path))
-        if path.rowcount == 1:
-            path = (await path.fetchone())["path"]
+        path = None
+        if self.parent_id:
+            path = await connection.execute(TextTable.__table__.select()\
+                                                                 .where(TextTable.id == self.parent_id)\
+                                                                 .column(TextTable.path))
+            if path.rowcount == 1:
+                path = (await path.fetchone())["path"]
+                children_count = await connection.execute(TextTable.__table__.select()\
+                                                                              .where(TextTable.path.startswith("%s." % path))\
+                                                                              .where(TextTable.path.notlike("%s.%%.%%" % path)))
+                self.path = "%s.%i" % (path, children_count.rowcount + 1)
+                return self.path
+            elif self.parent_id is not None:
+                raise Exception('Wrong parent id')
+        else:
             children_count = await connection.execute(TextTable.__table__.select()\
-                                                                          .where(TextTable.path.startswith("%s." % path))\
-                                                                          .where(TextTable.path.notlike("%s.%%.%%" % path)))
-            self.path = "%s.%i" % (path, children_count.rowcount + 1)
+                                                                         .where(TextTable.path.notlike("%.%")))
+            self.path = str(children_count.rowcount + 1)
             return self.path
-        elif self.parent_id is not None:
-            raise Exception('Wrong parent id')
+
         self.path = None
         return None
+
 
     async def get_parents_ids(self, connection):
         if not self.path:
@@ -123,6 +132,11 @@ class User(Base):
             return True
         return False
 
+    async def save(self, connection):
+        res = await connection.execute(User.__table__.insert().values(username=self.username,
+                                                                            password=self.password))
+
+
     @classmethod
     def hash_password(cls, password):
         return md5(password.encode('ascii')).hexdigest()
@@ -130,8 +144,10 @@ class User(Base):
 
 
 
+
+
 engine = None
 
 if __name__ == '__main__':
-    engine = create_engine('postgresql+psycopg2://everjun:password@localhost:5432/test_db')
+    engine = ce('postgresql+psycopg2://everjun:password@localhost:5432/test_db')
     Base.metadata.create_all(engine)

@@ -8,6 +8,11 @@ from settings import SECRET_KEY
 
 
 
+async def sign_up(connection, username, password):
+    u = User(username, password)
+    await u.save(connection)
+    return u
+
 
 async def login(con, username, password):
     u = User(username, password)

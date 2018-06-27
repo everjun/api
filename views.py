@@ -7,23 +7,15 @@ from models import User
 from aiohttp import web
 from aiopg.sa import create_engine
 from aiohttp_swagger import setup_swagger
-from settings import DATABASE_SETTINGS
+from settings import DATABASE_SETTINGS as settings
 from decorators import json_fields_required, json_login_required
 
 
-engine = None
-connection = None
 
-async def init_engine():
-    global engine
-    global connection
-    if not engine:
-        engine = await create_engine(user=DATABASE_SETTINGS['username'],
-                                     password=DATABASE_SETTINGS['password'],
-                                     database=DATABASE_SETTINGS['database'],
-                                     host=DATABASE_SETTINGS['host'],
-                                     port=DATABASE_SETTINGS['port'])
-        connection = await engine.acquire()
+
+async def init_engine(app, engine):
+    engine = await engine
+    app.client = await engine.acquire()
 
 
 
@@ -58,7 +50,7 @@ async def login(request):
     """
     try:
         r = await request.json()
-        user = await log(connection, r['username'], r['password'])
+        user = await log(app.client, r['username'], r['password'])
         if user:
             return web.json_response({'error': False, 'auth_token': get_secret_key(user).decode('utf8')})
         return web.json_response({'error': True, 'error_text': 'Wrong username or password'})
@@ -104,7 +96,7 @@ async def add(request):
         r = await request.json()
         parent_id = r.get('parent_id', None)
         text = r['text']
-        el = await add_element(connection, text, parent_id)
+        el = await add_element(app.client, text, parent_id)
         return web.json_response({'error': False, 'response':{'element':{'id': el.id, 'text': el.text, 'parent_id': str(el.parent_id)}}})
     except:
         pass
@@ -142,7 +134,7 @@ async def get(request):
     try:
         r = await request.json()
         text = r['text']
-        lst = await get_element(connection, text)
+        lst = await get_element(app.client, text)
         return web.json_response({'error': False, 'response':{'elements': lst}})
     except:
         pass
@@ -181,7 +173,7 @@ async def get_by_id(request):
     try:
         r = await request.json()
         id = r['id']
-        res = await get_tree(connection, id)
+        res = await get_tree(app.client, id)
         return web.json_response({'error': False, 'response':res})
     except:
         pass
@@ -193,16 +185,20 @@ async def get_by_id(request):
 app = web.Application()
 app.router.add_routes(routes)
 
+
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
+
+    engine = create_engine(user=settings['username'],
+                                     password=settings['password'],
+                                     database=settings['database'],
+                                     host=settings['host'],
+                                     port=settings['port'])
     try:
-        loop.run_until_complete(init_engine())
+        loop.run_until_complete(init_engine(app, engine))
         setup_swagger(app, api_version="1.0.0")
+        
         web.run_app(app)
+        
     except:
         pass
-    finally:
-        connection.close()
-        engine.close()
-
-
